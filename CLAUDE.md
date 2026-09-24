@@ -55,6 +55,8 @@ to that port on either side is a change to both. The standard every skill follow
   firebase emulators:start --only firestore --project demo-wallet &
   createdb wallet_test && psql -d wallet_test -v ON_ERROR_STOP=1 -f db/wallet.sql
   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 WALLET_PG_URL=postgres://localhost/wallet_test vitest run   # 94 pass
+  vitest run test/wallet.test.ts               # one suite
+  vitest run -t 'concurrent spends'            # one test, by name
   ```
 
   No `tsconfig.json` ships with the templates. The scratch one should be `strict`, include `DOM`, use
