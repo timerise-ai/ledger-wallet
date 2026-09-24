@@ -147,6 +147,10 @@ server version.
 - **Checkout expiry at exactly 30 minutes.** Stripe measures `expires_at` against its own clock and accepts 30
   minutes to 24 hours; the template uses 35 by default and clamps to 31 to 1439. Test: `sets a Checkout expiry
   inside the window Stripe accepts`.
+- **The test config relied on `__dirname`.** Vite's native config loader, planned as its default, does not
+  support it, and Vitest 5 warns on every run. `vitest.config.ts` resolves the alias from
+  `import.meta.dirname`, available from Node.js 20.11 (checked against the Node.js ESM documentation).
+  Verified by a clean run under Vitest 5 with no warning.
 
 ## Kept deliberately
 

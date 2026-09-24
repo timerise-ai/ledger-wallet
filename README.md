@@ -135,8 +135,8 @@ store behind the seam.
 ## Requirements
 
 Next.js App Router, the `stripe` package, `zod`, and either `firebase-admin` or a Postgres client with a
-`pg`-compatible pool. Vitest for the shipped suites. A scheduler that can call one route every 15 minutes,
-such as Vercel Cron. Number formatting uses the platform's `Intl`.
+`pg`-compatible pool. Vitest on Node.js 20.11 or later for the shipped suites. A scheduler that can call one
+route every 15 minutes, such as Vercel Cron. Number formatting uses the platform's `Intl`.
 
 ## Verification
 

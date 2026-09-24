@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `vitest.config.ts` in `testing.md` resolves the `@` alias from `import.meta.dirname` instead of
+  `__dirname`, which Vite's native config loader does not support and Vitest 5 warns about. The suites need
+  Node.js 20.11 or later.
+
 ## [0.1.0] - 2026-09-25
 
 Initial release of the `ledger-wallet` skill: a customer wallet with a balance per currency, Stripe

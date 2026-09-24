@@ -28,11 +28,11 @@ npx vitest run -t 'concurrent spends'             # one test
 
 ```ts
 // vitest.config.ts: maps the '@' alias the templates import with.
-import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  resolve: { alias: { '@': path.resolve(__dirname) } },
+  // import.meta.dirname (Node.js 20.11+): Vite's native config loader, its planned default, has no __dirname.
+  resolve: { alias: { '@': import.meta.dirname } },
   // Real-backend suites run concurrent transactions; the emulator is slower than a database.
   test: { include: ['test/**/*.test.ts'], testTimeout: 20_000 },
 });
