@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-25
+
 ### Fixed
 - `vitest.config.ts` in `testing.md` resolves the `@` alias from `import.meta.dirname` instead of
   `__dirname`, which Vite's native config loader does not support and Vitest 5 warns about. The suites need
