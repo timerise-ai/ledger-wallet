@@ -284,8 +284,9 @@ export function createPostgresWalletStore(pool: SqlPool, defaultCurrency: Curren
       }
       if (q.cursor) {
         // Keyset cursor: "<ISO createdAt>|<id>". Stable under inserts, unlike OFFSET.
+        // One this store did not issue is treated as no cursor, as on Firestore, not as a 500.
         const [at, id] = Buffer.from(q.cursor, 'base64url').toString().split('|');
-        if (at && id) {
+        if (at && id && !Number.isNaN(Date.parse(at))) {
           params.push(new Date(at), id);
           where += ` and (created_at, id) < ($${params.length - 1}, $${params.length})`;
         }
@@ -335,7 +336,7 @@ export function createPostgresWalletStore(pool: SqlPool, defaultCurrency: Curren
 | Deadlock or serialization failure | 40P01 / 40001 are retried up to three times |
 
 The concurrent-duplicate, overdraw and capture-versus-release races run against a real Postgres in
-`test/store-conformance.test.ts` when `WALLET_PG_URL` is set ([testing-stores.md](testing-stores.md)).
+`test/postgres.test.ts` when `WALLET_PG_URL` is set ([testing-stores.md](testing-stores.md)).
 
 ## Driver traps
 

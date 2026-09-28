@@ -14,7 +14,7 @@ description: >
   balance adjustment". Carries a pure ledger core with refs that make every retry a replay, holds that keep
   a mixed payment's balance part reserved until the card pays, per-currency limits floored at Stripe's
   minimum charge, the currency list taken as the skill argument with USD by default, Firestore and Postgres
-  stores verified by one conformance suite, and 94 tests. Next.js App Router; the store, auth and tenancy sit
+  stores verified by one conformance suite, and 97 tests. Next.js App Router; the store, auth and tenancy sit
   behind a seam. Not loyalty points, not gift cards, not a crypto wallet, not currency conversion, not
   marketplace payouts.
 argument-hint: "[currencies, e.g. USD,EUR,GBP]"
@@ -116,19 +116,26 @@ The seam lives here rather than in a separate `references/adaptation.md`. The re
 
 ## Quick start
 
-1. Resolve the currency list from the skill argument, or ask with USD as the default:
+Copy every template as written; the host's code goes in `host.ts`, `host-client.ts`, `config.ts`, the
+`lib/orders/` examples and files of its own. A template that looks wrong is reported in the handover, not
+patched, and the webhook and cron routes are copied, never merged with the host's own.
+
+1. Resolve the currency list from the skill argument, or ask with USD as the default; unattended, take USD:
    [money.md](references/money.md).
-2. Model and rename: [data-model.md](references/data-model.md).
-3. Core: [engine.md](references/engine.md).
-4. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
-5. Routes and the host seam: [api-routes.md](references/api-routes.md).
-6. Top-up and webhook: [stripe-top-up.md](references/stripe-top-up.md).
-7. Orders: [integration.md](references/integration.md), then [split-payment.md](references/split-payment.md).
-8. Screens: [ui.md](references/ui.md), [admin-ui.md](references/admin-ui.md).
-9. Tests: [testing.md](references/testing.md), [testing-payments.md](references/testing-payments.md),
+2. Model and rename: [data-model.md](references/data-model.md). Core: [engine.md](references/engine.md).
+3. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
+4. Routes and the host seam: [api-routes.md](references/api-routes.md). With no auth in the app, identity is
+   a signed cookie or none (401); never a header, a query or a fallback identity.
+5. Top-up and webhook: [stripe-top-up.md](references/stripe-top-up.md).
+6. Orders: [integration.md](references/integration.md), then [split-payment.md](references/split-payment.md).
+7. Screens: [ui.md](references/ui.md), [admin-ui.md](references/admin-ui.md).
+8. Tests, unmodified, after `npm i -D vitest`; one store leaves out the other backend's file:
+   [testing.md](references/testing.md), [testing-payments.md](references/testing-payments.md),
    [testing-stores.md](references/testing-stores.md).
-10. Go live: [operations.md](references/operations.md). Before changing a template:
-    [provenance.md](references/provenance.md).
+9. Go live: [operations.md](references/operations.md). Before changing a template:
+   [provenance.md](references/provenance.md).
+10. Hand over: the currencies and the default, the webhook URL per tenant and its four events, the 15-minute
+    cron and `CRON_SECRET` (unset, the sweeper refuses), and what resolves identity.
 
 ## Reference directory
 
@@ -140,15 +147,15 @@ The seam lives here rather than in a separate `references/adaptation.md`. The re
 | Firestore store | walletEntries, runTransaction, create(), indexes, security rules, AggregateField | [firestore.md](references/firestore.md) |
 | Postgres store | wallet.sql, FOR UPDATE, 23505, bigint as string, keyset cursor, RLS, Supabase | [postgres.md](references/postgres.md) |
 | Top-up, webhook, return page | createTopUpCheckout, handleWalletEvent, checkout.session.completed, whsec, stripe listen | [stripe-top-up.md](references/stripe-top-up.md) |
-| Wallet plus card, refunds, sweeper | planPayment, startSplitPayment, HOLD, CAPTURE, RELEASE, refundOrder, CRON_SECRET | [split-payment.md](references/split-payment.md) |
+| Wallet plus card, refunds, sweeper | planPayment, startSplitPayment, splitAttempt, HOLD, CAPTURE, RELEASE, refundOrder, CRON_SECRET | [split-payment.md](references/split-payment.md) |
 | Orders, other modules, bookable-events | pay in the order transaction, walletPaid, cardPaid, BalanceLedger, toBalanceLedger | [integration.md](references/integration.md) |
 | Routes, auth seam, errors | host.ts, getCustomerSession, customerExists, zod, 402, error contract | [api-routes.md](references/api-routes.md) |
 | Customer screens | WalletPanel, useWallet, top-up form, ?topUp=success, history, strings | [ui.md](references/ui.md) |
 | Staff screens | WalletAdminPanel, adjust dialog, note, requestId, reconciliation flag | [admin-ui.md](references/admin-ui.md) |
 | Config, cron, monitoring, seeds | go-live, delist currency, import balances, secret rotation, wallet_short | [operations.md](references/operations.md) |
-| Money and engine tests | vitest.config, memory store, money.test, wallet.test | [testing.md](references/testing.md) |
+| Money and engine tests | vitest.config.mts, memory store, money.test, wallet.test | [testing.md](references/testing.md) |
 | Stripe and route tests | fake Stripe, webhook replay, split, refunds, route guards | [testing-payments.md](references/testing-payments.md) |
-| Real-backend tests | store conformance, Firestore emulator, WALLET_PG_URL, order atomicity | [testing-stores.md](references/testing-stores.md) |
+| Real-backend tests | store contract, postgres.test, firestore.test, Firestore emulator, WALLET_PG_URL, order atomicity | [testing-stores.md](references/testing-stores.md) |
 | What the audit changed and why | audit, provenance, kept deliberately, added, order of work | [provenance.md](references/provenance.md) |
 
 Part of the [Timerise Skills](https://github.com/timerise-ai/skills) index, which lists the sibling skills.

@@ -43,8 +43,8 @@ Stripe delivers`, `does not credit a completed session whose async payment has n
 A full or partial balance payment was debited, and only then was the order created. When creation failed on
 a capacity conflict, the request answered 409 and the money was gone with no order to recover it from.
 **Shipped:** a wallet-only payment is posted inside the order's own transaction; a mixed payment holds
-instead of debiting ([integration.md](integration.md), [split-payment.md](split-payment.md)). Tests:
-`test/order-example.test.ts` on both real backends.
+instead of debiting ([integration.md](integration.md), [split-payment.md](split-payment.md)). Tests: the
+order examples in `test/postgres.test.ts` and `test/firestore.test.ts`.
 
 ### 5. Paying a pending order from the balance could charge twice
 
@@ -136,6 +136,32 @@ transaction repeated it. Security rules blocked it and nothing called it, but it
 server version.
 **Shipped:** no client-side writer exists; clients read through the API.
 
+### 16. A split retried after its Checkout expired held nothing
+
+Found by the agent evals of 0.1.2, in the skill's own split payment (see *Added*). The hold ref was one per
+order, and a hold settles once, so a second split for the same order replayed the released hold: the new
+Checkout ran with nothing reserved, and a balance spent in the meantime ended in `wallet_short` after the card
+paid. A double click opened a second Checkout against the same hold.
+**Shipped:** `orderRefs(orderRef, attempt)` gives each attempt its own hold ref; `startSplitPayment` refuses a
+settled attempt with `HOLD_NOT_OPEN` and `details.nextAttempt`, returns the open Checkout of an open one, and
+expires its own session when a concurrent start won ([split-payment.md](split-payment.md)). Tests: `a retry
+after an expired Checkout holds the wallet part again under the next attempt`, `a second start of an open
+attempt returns its Checkout instead of opening another`.
+
+### 17. Reconciliation reported a concurrent movement as drift
+
+Found by the agent evals of 0.1.2, in the skill's own reconciliation view. `reconcile` read the balance and
+the entry sums as two reads, so a movement committing between them showed a mismatch on the staff panel.
+**Shipped:** a mismatch is reported only when two reads in a row agree on it, or after a third
+([engine.md](engine.md)). Test: `reconcile does not report a movement that commits between its two reads`.
+
+### 18. A forged history cursor was a 500 on Postgres
+
+Found by the agent evals of 0.1.2, in the skill's own Postgres store. A cursor that decoded to a non-date
+reached Postgres as an invalid timestamp and failed the query; Firestore and the memory store already read an
+unknown cursor as none. **Shipped:** the Postgres store does the same ([postgres.md](postgres.md)), checked
+against a real Postgres. Test: `pages history newest first without gaps or repeats`, on every backend.
+
 ## Found while verifying the templates
 
 - **Same-millisecond entries sorted by hash.** Two movements in one millisecond appeared in either order, so
@@ -148,9 +174,10 @@ server version.
   minutes to 24 hours; the template uses 35 by default and clamps to 31 to 1439. Test: `sets a Checkout expiry
   inside the window Stripe accepts`.
 - **The test config relied on `__dirname`.** Vite's native config loader, planned as its default, does not
-  support it, and Vitest 5 warns on every run. `vitest.config.ts` resolves the alias from
-  `import.meta.dirname`, available from Node.js 20.11 (checked against the Node.js ESM documentation).
-  Verified by a clean run under Vitest 5 with no warning.
+  support it, and Vitest 5 warns on every run. The config resolves the alias from `import.meta.dirname`,
+  available from Node.js 20.11 (checked against the Node.js ESM documentation), and is named
+  `vitest.config.mts`: as `.ts` in a project whose `package.json` has no `"type": "module"`, Vitest 5 still
+  warned about ESM syntax in a CommonJS file. Verified by a clean run under Vitest 5 with no warning.
 
 ## Kept deliberately
 

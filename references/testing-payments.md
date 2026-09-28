@@ -153,12 +153,13 @@ describe('planPayment', () => {
 });
 
 describe('split payment', () => {
-  const start = async (orderRef = 'o1') => {
+  const again = (attempt?: number) => startSplitPayment({
+    wallet, stripe: fake.stripe, tenantId: T, customerId: C, orderRef: 'o1', currency: 'USD', attempt,
+    plan: { walletAmount: 400, cardAmount: 600 }, productName: 'Order', successUrl: 'https://x/ok', cancelUrl: 'https://x/no', actor,
+  });
+  const start = async () => {
     await wallet.topUp({ tenantId: T, customerId: C, currency: 'USD', amount: 400, ref: 'seed', reason, actor });
-    return startSplitPayment({
-      wallet, stripe: fake.stripe, tenantId: T, customerId: C, orderRef, currency: 'USD',
-      plan: { walletAmount: 400, cardAmount: 600 }, productName: 'Order', successUrl: 'https://x/ok', cancelUrl: 'https://x/no', actor,
-    });
+    return again();
   };
 
   it('holds the wallet part, captures it when the card pays, and confirms the order once per delivery', async () => {
@@ -208,6 +209,25 @@ describe('split payment', () => {
     const s = pay(fake.sessions.get(sessionId)!);
     expect(await handleWalletEvent(event('checkout.session.completed', s), { wallet, tenantId: T, onSplitPaid })).toBe('wallet_short');
     expect(onSplitPaid).toHaveBeenCalledWith(expect.objectContaining({ walletSettled: false }));
+  });
+  it('a second start of an open attempt returns its Checkout instead of opening another', async () => {
+    const first = await start();
+    expect(await again()).toEqual(first);
+    expect(fake.raw.checkout.sessions.create).toHaveBeenCalledTimes(1);
+    expect(await usd()).toMatchObject({ available: 0, held: 400 });
+  });
+  it('a retry after an expired Checkout holds the wallet part again under the next attempt', async () => {
+    const onSplitPaid = vi.fn(async () => undefined);
+    const first = await start();
+    const expired = Object.assign(fake.sessions.get(first.sessionId)!, { status: 'expired' });
+    await handleWalletEvent(event('checkout.session.expired', expired), { wallet, tenantId: T });
+    await expect(again()).rejects.toMatchObject({ code: 'HOLD_NOT_OPEN', details: { nextAttempt: 2 } });
+    const second = await again(2);
+    expect(second.holdRef).toBe(orderRefs('o1', 2).hold);
+    expect(await usd()).toMatchObject({ available: 0, held: 400 });
+    const s = pay(fake.sessions.get(second.sessionId)!);
+    expect(await handleWalletEvent(event('checkout.session.completed', s), { wallet, tenantId: T, onSplitPaid })).toBe('captured');
+    expect(onSplitPaid).toHaveBeenCalledWith(expect.objectContaining({ walletSettled: true }));
   });
   it('sweeper expires a stale open Checkout and releases its hold', async () => {
     const { holdRef } = await start();
@@ -285,6 +305,8 @@ describe('BalanceLedger adapter (bookable-events)', () => {
 | Release on expiry | `releases the wallet part when Checkout expires` |
 | No orphan Checkout when the hold fails | `expires the Checkout if the hold cannot be placed` |
 | Late payment after release | `takes the wallet part late...`, `reports walletSettled:false...` |
+| A double click opens one Checkout | `a second start of an open attempt returns its Checkout instead of opening another` |
+| A retried split is reserved again | `a retry after an expired Checkout holds the wallet part again under the next attempt` |
 | Missed webhooks are recovered | the two sweeper tests |
 | Refunds go to their source, once | the four refund tests |
 | The bookable-events port behaves as declared | `debits idempotently, reports insufficient, accepts lowercase codes` |

@@ -1,8 +1,8 @@
 # Testing: stores against real backends
 
 The in-memory store proves the engine's logic. It cannot prove that a Firestore transaction retries, that
-`FOR UPDATE` serializes, or that a unique constraint fires under a race. These two suites run the same
-contract against every configured backend, concurrency cases included, with real concurrency.
+`FOR UPDATE` serializes, or that a unique constraint fires under a race. One contract runs against every
+configured backend, concurrency cases included, with real concurrency.
 
 | Backend | Enabled by | Needs |
 |---|---|---|
@@ -13,54 +13,37 @@ contract against every configured backend, concurrency cases included, with real
 Each test uses a fresh random tenant id, so the suites can run repeatedly against a shared staging database
 without cleanup.
 
+**One file per backend.** `test/postgres.test.ts` and `test/firestore.test.ts` each hold that backend's
+contract run and its order example. An app on one store copies `test/store-contract.ts`,
+`test/store-conformance.test.ts` and its own backend's file, all as written, and leaves out the other file
+with the other store; no shipped test is edited. On Postgres alone that is 79 pass and 1 skipped without a
+database, 88 with one; on Firestore alone the same with the emulator.
+
 ## The store contract
 
 ```ts
-// test/store-conformance.test.ts: the same guarantees, against every backend.
-//
-//   npx vitest run test/store-conformance.test.ts                         # memory only
-//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npx vitest run test/store-...  # + Firestore emulator
-//   WALLET_PG_URL=postgres://postgres@localhost:5432/wallet_test npx vitest run ...  # + Postgres (db/wallet.sql applied)
-//
-// Real backends run the concurrency cases with real concurrency, the point of this file.
+// test/store-contract.ts: the guarantees every store keeps, registered once per backend by
+// test/store-conformance.test.ts (memory), test/postgres.test.ts and test/firestore.test.ts.
+// Not a test file itself: vitest only collects *.test.ts.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createFirestoreWalletStore } from '@/lib/wallet/firestore-store';
-import { createMemoryWalletStore } from '@/lib/wallet/memory-store';
 import { createCurrencyPolicy } from '@/lib/wallet/money';
-import type { WalletStore } from '@/lib/wallet/ports';
-import { createPostgresWalletStore, postgresWalletTx, type SqlPool } from '@/lib/wallet/postgres-store';
+import type { WalletStore, WalletTx } from '@/lib/wallet/ports';
 import type { Actor } from '@/lib/wallet/types';
 import { createWallet, type Wallet } from '@/lib/wallet/wallet';
 
-interface Backend {
+export interface Backend {
   store: WalletStore;
-  pool?: SqlPool;
+  /** Runs `post` inside a transaction of the caller's that is then rolled back. Postgres only. */
+  rolledBack?(post: (tx: WalletTx) => Promise<unknown>): Promise<void>;
   close(): Promise<void>;
-}
-const backends: Array<[string, () => Promise<Backend>]> = [
-  ['memory', async () => ({ store: createMemoryWalletStore('USD').store, close: async () => undefined })],
-];
-if (process.env.FIRESTORE_EMULATOR_HOST) {
-  backends.push(['firestore', async () => {
-    const { initializeApp, getApps } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const app = getApps()[0] ?? initializeApp({ projectId: 'demo-wallet' });
-    return { store: createFirestoreWalletStore(getFirestore(app), 'USD'), close: async () => undefined };
-  }]);
-}
-if (process.env.WALLET_PG_URL) {
-  backends.push(['postgres', async () => {
-    const { Pool } = await import('pg');
-    const pool = new Pool({ connectionString: process.env.WALLET_PG_URL, max: 10 });
-    return { store: createPostgresWalletStore(pool, 'USD'), pool, close: () => pool.end() };
-  }]);
 }
 
 const actor: Actor = { type: 'system', id: 'conformance' };
 const reason = { key: 'wallet.reason.test' };
 
-describe.each(backends)('%s store', (_name, make) => {
+export function describeStoreContract(name: string, make: () => Promise<Backend>) {
+  describe(`${name} store`, () => {
   let backend: Backend;
   let wallet: Wallet;
   let T: string; // a fresh tenant per test isolates runs against a shared database
@@ -116,6 +99,10 @@ describe.each(backends)('%s store', (_name, make) => {
       cursor = page.nextCursor;
     } while (cursor);
     expect(seen).toEqual([500, 400, 300, 200, 100]);
+    // A cursor this store did not issue reads as no cursor, never as a server error.
+    const forged = Buffer.from('not a date|x').toString('base64url');
+    const first = await wallet.listEntries({ tenantId: T, customerId: C, limit: 2, cursor: forged });
+    expect(first.entries.map((e) => e.amount)).toEqual([500, 400]);
   });
 
   it('filters history by currency and keeps currencies apart', async () => {
@@ -140,22 +127,24 @@ describe.each(backends)('%s store', (_name, make) => {
   });
 
   it('a movement inside the transaction of the caller rolls back with it', async () => {
-    if (!backend.pool) return; // Postgres-specific; Firestore's equivalent is firestoreWalletTx
+    if (!backend.rolledBack) return; // Postgres-specific; Firestore's equivalent is firestoreWalletTx
     await credit(1000, 'seed');
-    const client = await backend.pool.connect();
-    try {
-      await client.query('begin');
-      await wallet.postInTx(postgresWalletTx(client, 'USD'), {
-        tenantId: T, customerId: C, currency: 'USD', ref: 'order:77', command: { kind: 'SPEND', amount: 400 }, reason, actor,
-      });
-      await client.query('rollback'); // e.g. the order insert failed on a capacity check
-    } finally {
-      client.release();
-    }
+    await backend.rolledBack((tx) => wallet.postInTx(tx, {
+      tenantId: T, customerId: C, currency: 'USD', ref: 'order:77', command: { kind: 'SPEND', amount: 400 }, reason, actor,
+    })); // e.g. the order insert failed on a capacity check
     expect((await bal()).available).toBe(1000);
     expect(await wallet.getEntry(T, 'order:77')).toBeNull();
   });
 });
+}
+```
+
+```ts
+// test/store-conformance.test.ts: the store contract against the in-memory store, always run.
+import { createMemoryWalletStore } from '@/lib/wallet/memory-store';
+import { describeStoreContract } from './store-contract';
+
+describeStoreContract('memory', async () => ({ store: createMemoryWalletStore('USD').store, close: async () => undefined }));
 ```
 
 | Contract | Why it matters on a real backend |
@@ -163,40 +152,65 @@ describe.each(backends)('%s store', (_name, make) => {
 | Five concurrent posts of one ref apply once | Firestore must retry and replay; Postgres must serialize on the row lock |
 | Four concurrent 300 spends from 1000 leave 100 | the overdraft guard holds under contention, not only in sequence |
 | Capture and release racing on one hold: exactly one wins | the hold's status is read under a lock or retried on conflict |
-| History pages without gaps or repeats | the cursor and the index agree on the sort order |
+| History pages without gaps or repeats; a forged cursor is no cursor | the cursor and the index agree on the sort order; a bad cursor is not a 500 |
 | A movement inside the caller's rolled-back transaction leaves nothing | `postgresWalletTx` really joins the caller's transaction |
 
-## Orders pay atomically
+## Postgres
 
 ```ts
-// test/order-example.test.ts: the order examples against real backends: a sold-out slot
-// moves no money, and a short wallet creates no order. Skipped without a backend.
+// test/postgres.test.ts: the store contract and the order example against a real Postgres
+// with db/wallet.sql applied. Skipped without WALLET_PG_URL.
+//   WALLET_PG_URL=postgres://localhost/wallet_test npx vitest run test/postgres.test.ts
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { createOrderPaidFromWallet } from '@/lib/orders/pay-from-wallet.postgres';
 import { createCurrencyPolicy } from '@/lib/wallet/money';
-import { createFirestoreWalletStore } from '@/lib/wallet/firestore-store';
-import { createPostgresWalletStore, type SqlPool } from '@/lib/wallet/postgres-store';
+import { createPostgresWalletStore, postgresWalletTx, type SqlPool } from '@/lib/wallet/postgres-store';
 import { createWallet } from '@/lib/wallet/wallet';
-import { createOrderPaidFromWallet as payFs } from '@/lib/orders/pay-from-wallet.firestore';
-import { createOrderPaidFromWallet as payPg } from '@/lib/orders/pay-from-wallet.postgres';
+import { describeStoreContract } from './store-contract';
 
+const url = process.env.WALLET_PG_URL;
 const actor = { type: 'system', id: 't' } as const;
 const reason = { key: 'k' };
 
-describe.skipIf(!process.env.WALLET_PG_URL)('postgres order example', () => {
+if (url) {
+  describeStoreContract('postgres', async () => {
+    const { Pool } = await import('pg');
+    const pool = new Pool({ connectionString: url, max: 10 });
+    return {
+      store: createPostgresWalletStore(pool, 'USD'),
+      async rolledBack(post) {
+        const client = await pool.connect();
+        try {
+          await client.query('begin');
+          await post(postgresWalletTx(client, 'USD'));
+          await client.query('rollback');
+        } finally {
+          client.release();
+        }
+      },
+      close: () => pool.end(),
+    };
+  });
+}
+
+describe.skipIf(!url)('postgres order example', () => {
   it('is all-or-nothing', async () => {
     const { Pool } = await import('pg');
-    const pool = new Pool({ connectionString: process.env.WALLET_PG_URL }) as unknown as SqlPool & { end(): Promise<void> };
+    // The example's slots and orders live in a schema of their own, never beside the host's tables.
+    const pool = new Pool({ connectionString: url, options: '-c search_path=wallet_example,public' });
+    await pool.query(`create schema if not exists wallet_example`);
     await pool.query(`create table if not exists slots (id text primary key, booked int not null, capacity int not null)`);
     await pool.query(`create table if not exists orders (id text primary key, tenant_id text, customer_id text, status text,
       currency text, total bigint, wallet_paid bigint, card_paid bigint, wallet_entry_id text)`);
-    const wallet = createWallet({ store: createPostgresWalletStore(pool, 'USD'), policy: createCurrencyPolicy(['USD']) });
+    const db = pool as unknown as SqlPool;
+    const wallet = createWallet({ store: createPostgresWalletStore(db, 'USD'), policy: createCurrencyPolicy(['USD']) });
     const T = `t-${randomUUID()}`;
     const slot = `s-${randomUUID()}`;
     await pool.query(`insert into slots values ($1, 0, 1)`, [slot]);
     await wallet.topUp({ tenantId: T, customerId: 'c', currency: 'USD', amount: 1500, ref: 'seed', reason, actor });
     const order = (id: string, total: number) =>
-      payPg(pool, wallet, { tenantId: T, customerId: 'c', orderId: `${T}-${id}`, slotId: slot, currency: 'USD', total });
+      createOrderPaidFromWallet(db, wallet, { tenantId: T, customerId: 'c', orderId: `${T}-${id}`, slotId: slot, currency: 'USD', total });
 
     await expect(order('o-short', 5000)).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
     await order('o1', 1000);
@@ -208,19 +222,49 @@ describe.skipIf(!process.env.WALLET_PG_URL)('postgres order example', () => {
     await pool.end();
   });
 });
+```
 
-describe.skipIf(!process.env.FIRESTORE_EMULATOR_HOST)('firestore order example', () => {
+## Firestore
+
+```ts
+// test/firestore.test.ts: the store contract and the order example against the Firestore
+// emulator. Skipped without FIRESTORE_EMULATOR_HOST.
+//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npx vitest run test/firestore.test.ts
+import { randomUUID } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
+import { createOrderPaidFromWallet } from '@/lib/orders/pay-from-wallet.firestore';
+import { createFirestoreWalletStore } from '@/lib/wallet/firestore-store';
+import { createCurrencyPolicy } from '@/lib/wallet/money';
+import { createWallet } from '@/lib/wallet/wallet';
+import { describeStoreContract } from './store-contract';
+
+const emulator = process.env.FIRESTORE_EMULATOR_HOST;
+const actor = { type: 'system', id: 't' } as const;
+const reason = { key: 'k' };
+
+async function emulatorDb() {
+  const { initializeApp, getApps } = await import('firebase-admin/app');
+  const { getFirestore } = await import('firebase-admin/firestore');
+  return getFirestore(getApps()[0] ?? initializeApp({ projectId: 'demo-wallet' }));
+}
+
+if (emulator) {
+  describeStoreContract('firestore', async () => ({
+    store: createFirestoreWalletStore(await emulatorDb(), 'USD'),
+    close: async () => undefined,
+  }));
+}
+
+describe.skipIf(!emulator)('firestore order example', () => {
   it('is all-or-nothing', async () => {
-    const { initializeApp, getApps } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const db = getFirestore(getApps()[0] ?? initializeApp({ projectId: 'demo-wallet' }));
+    const db = await emulatorDb();
     const wallet = createWallet({ store: createFirestoreWalletStore(db, 'USD'), policy: createCurrencyPolicy(['USD']) });
     const T = `t-${randomUUID()}`;
     const slot = `s-${randomUUID()}`;
     await db.collection('slots').doc(slot).set({ booked: 0, capacity: 1 });
     await wallet.topUp({ tenantId: T, customerId: 'c', currency: 'USD', amount: 1500, ref: 'seed', reason, actor });
     const order = (id: string, total: number) =>
-      payFs(db, wallet, { tenantId: T, customerId: 'c', orderId: `${T}-${id}`, slotId: slot, currency: 'USD', total });
+      createOrderPaidFromWallet(db, wallet, { tenantId: T, customerId: 'c', orderId: `${T}-${id}`, slotId: slot, currency: 'USD', total });
 
     await expect(order('short', 5000)).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
     await order('o1', 1000);
@@ -232,9 +276,11 @@ describe.skipIf(!process.env.FIRESTORE_EMULATOR_HOST)('firestore order example',
 });
 ```
 
-These run the two examples of [integration.md](integration.md) as written. The Postgres test creates its own
-`slots` and `orders` tables if they are missing; the Firestore test writes to `slots` and `orders` in the
-emulator. Point them at the host's real order code once it exists.
+The order examples run the two examples of [integration.md](integration.md) as written: a sold-out slot moves
+no money, and a short wallet creates no order. The Postgres one keeps its `slots` and `orders` tables in a
+`wallet_example` schema; the Firestore one writes to `slots` and `orders` in the emulator. They test the
+examples, not the host's order code: copy both as they are, and give the host's own order code its own file
+and its own tests.
 
 ## Running the backends locally
 

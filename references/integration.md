@@ -129,8 +129,10 @@ export async function createOrderPaidFromWallet(pool: SqlPool, wallet: Wallet, i
 }
 ```
 
-Both examples run against the Firestore emulator and a real Postgres in `test/order-example.test.ts`
-([testing-stores.md](testing-stores.md)): a sold-out slot moves no money and a short wallet creates no order.
+Both examples run against the Firestore emulator and a real Postgres, in `test/firestore.test.ts` and
+`test/postgres.test.ts` ([testing-stores.md](testing-stores.md)): a sold-out slot moves no money and a short
+wallet creates no order. Copy the example for your store and its test as written; the host's own order code
+is its own file, following the same shape.
 
 **Price on the server.** `total` is computed from the host's own price list inside the request, never taken
 from the client. A client-supplied total makes the customer the one who decides how much is debited.
@@ -146,6 +148,7 @@ Whatever the host's order looks like, it needs these fields for the wallet to wo
 | `payment.cardPaid` | the card part is paid | `refundOrder` |
 | `payment.paymentIntentId` | the card part is paid | `refundOrder` (Stripe refund) |
 | `payment.walletEntryId` or `holdRef` | the wallet part is taken | support, reconciliation against orders |
+| `splitAttempt` | starts at 1; `onSplitFailed` adds 1 | `startSplitPayment`, so a retried split holds again ([split-payment.md](split-payment.md)) |
 
 ## bookable-events
 

@@ -1,25 +1,30 @@
 # Testing: setup, money and the engine
 
 The templates ship with Vitest suites that hold every rule the other references state. Copy them into the
-host's test folder with the code; they need no database and no network by default.
+host's test folder with the code, as written: install Vitest from the package registry (`npm i -D vitest`),
+never convert, merge or trim a shipped test, and put the host's own tests in files of its own. They need no
+database and no network by default.
 
 | Suite | Tests | Holds | Reference |
 |---|---|---|---|
 | `test/money.test.ts` | 15 | currency list parsing, exponents, Stripe amounts, form parsing, formatting, top-up limits | this file |
-| `test/wallet.test.ts` | 20 | purity, idempotency, concurrency on one balance, currencies apart, holds, history order, reconciliation | this file |
-| `test/stripe.test.ts` | 24 | top-up, webhook replay, split payment, sweeper, refunds, bookable-events adapter | [testing-payments.md](testing-payments.md) |
+| `test/wallet.test.ts` | 21 | purity, idempotency, concurrency on one balance, currencies apart, holds, history order, reconciliation | this file |
+| `test/stripe.test.ts` | 26 | top-up, webhook replay, split payment, sweeper, refunds, bookable-events adapter | [testing-payments.md](testing-payments.md) |
 | `test/routes.test.ts` | 9 | auth, tenant scope, roles, feature gate, validation, replayed adjustments, fail-closed cron | [testing-payments.md](testing-payments.md) |
-| `test/store-conformance.test.ts` | 8 per backend | the store contract, with real concurrency | [testing-stores.md](testing-stores.md) |
-| `test/order-example.test.ts` | 1 per real backend | an order and its payment commit or roll back together | [testing-stores.md](testing-stores.md) |
+| `test/store-conformance.test.ts` | 8 | the store contract (`test/store-contract.ts`) on the in-memory store | [testing-stores.md](testing-stores.md) |
+| `test/postgres.test.ts` | 8 + 1 | the store contract with real concurrency, and the order example commits or rolls back whole | [testing-stores.md](testing-stores.md) |
+| `test/firestore.test.ts` | 8 + 1 | the same against the Firestore emulator | [testing-stores.md](testing-stores.md) |
 
-Without a database, 76 tests run (the conformance suite on the in-memory store) and 2 are skipped. With the
-Firestore emulator and a Postgres both configured, 94 run.
+Without a database, 79 tests run (the contract on the in-memory store) and 2 are skipped, one order example
+per backend file. With the Firestore emulator and a Postgres both configured, 97 run. An app on one store
+leaves out the other backend's file: 79 and 1 skipped, 88 with its backend
+([testing-stores.md](testing-stores.md)).
 
 ```bash
-npx vitest run                                    # 76 pass, 2 skipped
+npx vitest run                                    # 79 pass, 2 skipped
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
 WALLET_PG_URL=postgres://postgres@localhost:5432/wallet_test \
-npx vitest run                                    # 94 pass
+npx vitest run                                    # 97 pass
 npx vitest run test/wallet.test.ts                # one suite
 npx vitest run -t 'concurrent spends'             # one test
 ```
@@ -27,7 +32,8 @@ npx vitest run -t 'concurrent spends'             # one test
 ## Configuration
 
 ```ts
-// vitest.config.ts: maps the '@' alias the templates import with.
+// vitest.config.mts: maps the '@' alias the templates import with. The .mts extension loads it as
+// ESM whether or not the host's package.json says "type": "module", so Vitest 5 runs without a warning.
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -38,8 +44,9 @@ export default defineConfig({
 });
 ```
 
-The route tests import Next.js route handlers, so `next` must be installed (it is, in any host). The
-Postgres suites import `pg`; a host on another driver swaps the import in the two test files.
+The route tests import Next.js route handlers, so `next` must be installed (it is, in any host).
+`test/postgres.test.ts` imports `pg`; a host on another driver adds `pg` as a dev dependency for it rather
+than editing the test, since the store only needs a `pg`-compatible pool.
 
 ## The in-memory store
 
@@ -439,6 +446,19 @@ describe('history and reconciliation', () => {
     mem.forceBalance(T, C, 'USD', { available: 5000, held: 300 }); // e.g. a seed script
     expect(await wallet.reconcile(T, C)).toHaveLength(1);
   });
+  it('reconcile does not report a movement that commits between its two reads', async () => {
+    await topUp(1000, 'a');
+    const sumEntries = mem.store.sumEntries.bind(mem.store);
+    let raced = false;
+    mem.store.sumEntries = async (tenantId, customerId) => {
+      if (!raced) {
+        raced = true;
+        await topUp(500, 'b'); // commits after the balance was read, before the sums are
+      }
+      return sumEntries(tenantId, customerId);
+    };
+    expect(await wallet.reconcile(T, C)).toEqual([]);
+  });
   it('the preferred currency defaults to the policy default and must be allowed', async () => {
     expect((await wallet.getWallet(T, C)).preferredCurrency).toBe('USD');
     await wallet.setPreferredCurrency(T, C, 'eur');
@@ -461,4 +481,5 @@ describe('history and reconciliation', () => {
 | A hold settles exactly once | the three `holds` tests |
 | History order is exact even on a frozen clock | `orders history exactly even when the clock does not move` |
 | A balance written outside the ledger is detected | `reconcile is clean after normal use and catches a write that bypassed the ledger` |
+| A movement racing the check is not reported as drift | `reconcile does not report a movement that commits between its two reads` |
 | The preference defaults to the first listed currency and must be listed | `the preferred currency defaults...` |

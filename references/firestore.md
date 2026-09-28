@@ -262,5 +262,5 @@ the client; the API route is simpler and keeps one code path.
 - **Timestamps.** Entries store `createdAt` as a Firestore `Timestamp` (millisecond precision in practice);
   `lastMovementAt` on the balance stores the same instant, which is what keeps same-millisecond entries in
   order.
-- **Emulator.** `test/store-conformance.test.ts` runs the full contract, concurrency cases included, against
+- **Emulator.** `test/firestore.test.ts` runs the full contract, concurrency cases included, against
   the Firestore emulator when `FIRESTORE_EMULATOR_HOST` is set ([testing-stores.md](testing-stores.md)).

@@ -34,7 +34,7 @@ point: money paid into one tenant's Stripe account is only spendable at that ten
 | `SPEND` | - amount | | order service | `order:<orderId>` |
 | `REFUND` | + amount | | refund service | `order:<orderId>:refund` |
 | `ADJUSTMENT` | + or - delta | | staff, with a note | `adjust:<requestId uuid>` |
-| `HOLD` | - amount | + amount | split payment | `order:<orderId>:hold` (the hold's own id) |
+| `HOLD` | - amount | + amount | split payment | `order:<orderId>:hold`, then `order:<orderId>:hold:<attempt>` from attempt 2 (the hold's own id) |
 | `CAPTURE` | | - amount | webhook or sweeper | `<holdRef>:capture` |
 | `RELEASE` | + amount | - amount | webhook or sweeper | `<holdRef>:release` |
 

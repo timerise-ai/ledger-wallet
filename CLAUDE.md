@@ -58,20 +58,20 @@ to that port on either side is a change to both. The standard every skill follow
 
   ```bash
   tsc --noEmit -p . && tsc --noEmit -p . --noUncheckedIndexedAccess
-  vitest run                                   # 76 pass, 2 skipped: no backends
+  vitest run                                   # 79 pass, 2 skipped: no backends
   firebase emulators:start --only firestore --project demo-wallet &
   createdb wallet_test && psql -d wallet_test -v ON_ERROR_STOP=1 -f db/wallet.sql
-  FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 WALLET_PG_URL=postgres://localhost/wallet_test vitest run   # 94 pass
+  FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 WALLET_PG_URL=postgres://localhost/wallet_test vitest run   # 97 pass
   vitest run test/wallet.test.ts               # one suite
   vitest run -t 'concurrent spends'            # one test, by name
   ```
 
   No `tsconfig.json` ships with the templates. The scratch one should be `strict`, include `DOM`, use
-  `"jsx": "react-jsx"`, and map the `@/` alias (`"paths": { "@/*": ["./*"] }`); `vitest.config.ts` (in
+  `"jsx": "react-jsx"`, and map the `@/` alias (`"paths": { "@/*": ["./*"] }`); `vitest.config.mts` (in
   `testing.md`) maps the same alias for the tests. Both type-checks must be clean and all tests must pass.
   Do not add a `package.json` to this repository.
-- **Test counts are claims.** `testing.md` states 15 + 20 + 24 + 9 unit tests, 8 contract tests per backend
-  and 2 order tests: 76 without backends, 94 with both. `README.md`, `SKILL.md` and `CHANGELOG.md` repeat the
+- **Test counts are claims.** `testing.md` states 15 + 21 + 26 + 9 unit tests, 8 contract tests per backend
+  and 2 order tests: 79 without backends, 97 with both. `README.md`, `SKILL.md` and `CHANGELOG.md` repeat the
   totals. Change a suite, change the numbers.
 - **Test names are cited.** `testing.md`, `testing-payments.md`, `testing-stores.md` and `provenance.md`
   quote test names; renaming a test means updating the citation.

@@ -109,6 +109,12 @@ export const splitCallbacks: SplitCallbacks = {};
 | `customerExists` | read the customer doc and compare its tenant | query the users table by tenant | query with the service role |
 | `getWalletStore` | `createFirestoreWalletStore(getFirestore(), DEFAULT_CURRENCY)` | `createPostgresWalletStore(pool, DEFAULT_CURRENCY)` | `createPostgresWalletStore(pool, DEFAULT_CURRENCY)` with the pooled connection string |
 
+**An app with no sign-in yet.** Tenant and customer still come from something the server verifies: a signed,
+`HttpOnly` session cookie issued by a sign-in route the host adds, or no session at all, so every function
+returns `null` and every route answers 401 until auth exists. Never a request header, a query parameter or a
+body field, and no development fallback identity: the caller sets all of those, which hands it any wallet.
+The handover names which one was built.
+
 ## Shared helpers
 
 ```ts

@@ -362,24 +362,41 @@ export function createWallet({ store, policy, now = () => new Date() }: WalletDe
       return store.listEntries({ ...query, currency, limit });
     },
 
-    /** Empty array = the balance equals the sum of its entries in every currency. */
+    /** The hold behind a holdRef, any status, or null. */
+    getHold(tenantId: string, holdRef: string): Promise<WalletHold | null> {
+      return store.runTransaction((tx) => tx.readHold(tenantId, holdRef));
+    },
+
+    /**
+     * Empty array = the balance equals the sum of its entries in every currency.
+     * The balance and the sums are two reads, so a movement committing between them looks
+     * like drift. Real drift survives a re-read: a mismatch is reported only when two
+     * reads in a row agree on it (or after the third read).
+     */
     async reconcile(tenantId: string, customerId: string) {
-      const [snapshot, sums] = await Promise.all([
-        store.getWallet(tenantId, customerId),
-        store.sumEntries(tenantId, customerId),
-      ]);
-      const stored = new Map((snapshot?.balances ?? []).map((b) => [b.currency, b]));
-      const summed = new Map(sums.map((s) => [s.currency, s]));
-      const currencies = new Set([...stored.keys(), ...summed.keys()]);
-      const mismatches: Array<{ currency: CurrencyCode; stored: CurrencyBalance; fromEntries: CurrencyBalance }> = [];
-      for (const currency of currencies) {
-        const a = stored.get(currency) ?? { currency, available: 0, held: 0 };
-        const b = summed.get(currency) ?? { currency, available: 0, held: 0 };
-        if (a.available !== b.available || a.held !== b.held) mismatches.push({ currency, stored: a, fromEntries: b });
+      let previous = '';
+      for (let read = 1; ; read++) {
+        const snapshot = await store.getWallet(tenantId, customerId);
+        const mismatches = compareBalances(snapshot?.balances ?? [], await store.sumEntries(tenantId, customerId));
+        const key = JSON.stringify(mismatches);
+        if (mismatches.length === 0 || key === previous || read === 3) return mismatches;
+        previous = key;
       }
-      return mismatches;
     },
   };
+}
+
+function compareBalances(balances: CurrencyBalance[], sums: CurrencyBalance[]) {
+  const stored = new Map(balances.map((b) => [b.currency, b]));
+  const summed = new Map(sums.map((s) => [s.currency, s]));
+  const currencies = new Set([...stored.keys(), ...summed.keys()]);
+  const mismatches: Array<{ currency: CurrencyCode; stored: CurrencyBalance; fromEntries: CurrencyBalance }> = [];
+  for (const currency of currencies) {
+    const a = stored.get(currency) ?? { currency, available: 0, held: 0 };
+    const b = summed.get(currency) ?? { currency, available: 0, held: 0 };
+    if (a.available !== b.available || a.held !== b.held) mismatches.push({ currency, stored: a, fromEntries: b });
+  }
+  return mismatches;
 }
 
 /** A reused ref must describe the same movement; anything else is a caller bug worth a 409. */
@@ -431,4 +448,5 @@ One instance per server process, created lazily from the host's store and the po
 in-memory store ([testing.md](testing.md)).
 
 `getEntry(tenantId, ref)` answers "has this happened yet?" without a write. The top-up status route and the
-bookable-events adapter use it.
+bookable-events adapter use it. `getHold(tenantId, holdRef)` returns a hold in any status; `startSplitPayment`
+uses it to tell an open attempt from a settled one.

@@ -20,18 +20,25 @@ something has to notice and give it back. A hold keeps the money in the customer
 "reserved", until Stripe answers:
 
 ```
- startSplitPayment
+ startSplitPayment (attempt n)
+   hold of attempt n already settled: HOLD_NOT_OPEN, start attempt n+1
+   hold of attempt n open, its Checkout open: return that Checkout (a double click)
    create Checkout for cardAmount (expires in 35 min, metadata: type wallet_split, holdRef, orderRef, ...)
-   HOLD walletAmount, ref order:<id>:hold, externalRef = session id
+   HOLD walletAmount, ref order:<id>:hold (attempt 1) or order:<id>:hold:<n>, externalRef = session id
      (if the hold fails: expire the session, rethrow)
  webhook, paid                 CAPTURE  then onSplitPaid     (confirm the order)
- webhook, expired or failed    RELEASE  then onSplitFailed   (free the order)
+ webhook, expired or failed    RELEASE  then onSplitFailed   (free the order; the next try is attempt n+1)
  sweeper, webhook never came   asks Stripe for the session and takes the same path
 ```
 
 The session is created **before** the hold: a session costs nothing and can be expired, while a hold with no
 session behind it could never settle. If the hold then fails because the balance moved since the plan, the
 session is expired and the caller re-plans.
+
+**One hold per attempt.** A hold ref settles once, so a customer who lets a Checkout expire and tries again
+needs a new ref, or the new Checkout would run with nothing reserved. The host keeps `splitAttempt` on the
+order, passes it as `attempt`, and adds 1 in `onSplitFailed`. Reusing a settled attempt is refused with
+`HOLD_NOT_OPEN` and `details.nextAttempt`, never replayed silently.
 
 ## Planning and starting
 
@@ -53,11 +60,15 @@ import type { Wallet } from './wallet';
 
 export const SPLIT_METADATA_TYPE = 'wallet_split';
 
-/** Refs for one order. Deterministic, so every retry of every step is idempotent. */
-export function orderRefs(orderRef: string) {
+/**
+ * Refs for one order. Deterministic, so every retry of every step is idempotent. A hold
+ * settles once, so each split attempt after the first gets its own hold ref.
+ */
+export function orderRefs(orderRef: string, attempt = 1) {
+  if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error(`attempt must be 1 or more, got ${attempt}`);
   return {
     spend: `order:${orderRef}`,
-    hold: `order:${orderRef}:hold`,
+    hold: attempt === 1 ? `order:${orderRef}:hold` : `order:${orderRef}:hold:${attempt}`,
     refund: `order:${orderRef}:refund`,
   };
 }
@@ -121,23 +132,47 @@ export interface StartSplitInput {
   successUrl: string;
   cancelUrl: string;
   actor: Actor;
+  /** 1 for the order's first split; the host adds 1 in onSplitFailed and stores it on the order. */
+  attempt?: number;
   /** Checkout lifetime, 31 to 1439 minutes (Stripe allows 30 min to 24 h). The hold lasts as long. */
   expiresInMinutes?: number;
   now?: () => Date;
 }
+
+type SplitStart = { url: string; sessionId: string; holdRef: string };
 
 /**
  * Creates the Checkout for the card part, then holds the wallet part against it.
  * Session first: it is free to create and can be expired, while a hold without a
  * session would have nothing to settle it. If the hold fails (the balance moved since
  * planning), the session is expired and the error is rethrown for the caller to re-plan.
+ * An attempt whose hold is still open returns its own Checkout; a settled one is refused.
  */
-export async function startSplitPayment(input: StartSplitInput): Promise<{ url: string; sessionId: string; holdRef: string }> {
+export async function startSplitPayment(input: StartSplitInput): Promise<SplitStart> {
   const { plan, currency } = input;
   if (plan.walletAmount <= 0 || plan.cardAmount <= 0) {
     throw new Error('startSplitPayment is for wallet+card plans; pay wallet-only or card-only orders directly');
   }
-  const refs = orderRefs(input.orderRef);
+  const attempt = input.attempt ?? 1;
+  const refs = orderRefs(input.orderRef, attempt);
+
+  // The Checkout already holding this attempt's money, if it can still be paid.
+  const reuse = async (sessionId: string | null): Promise<SplitStart> => {
+    const open = sessionId ? await input.stripe.checkout.sessions.retrieve(sessionId) : null;
+    if (open?.status === 'open' && open.url) return { url: open.url, sessionId: open.id, holdRef: refs.hold };
+    throw new WalletError('REF_CONFLICT', 'The Checkout of this attempt has not settled yet', { holdRef: refs.hold });
+  };
+  const existing = await input.wallet.getHold(input.tenantId, refs.hold);
+  if (existing && existing.customerId !== input.customerId) {
+    throw new WalletError('REF_CONFLICT', 'ref was already used for a different movement', { ref: refs.hold });
+  }
+  if (existing && existing.status !== 'OPEN') {
+    throw new WalletError('HOLD_NOT_OPEN', 'This attempt is settled; start the next one', {
+      holdRef: refs.hold, status: existing.status, nextAttempt: attempt + 1,
+    });
+  }
+  if (existing) return reuse(existing.externalRef);
+
   const now = input.now ?? (() => new Date());
   // A margin on both ends: expires_at is measured against Stripe's clock, not ours, and a value
   // that lands a second outside the 30-minute-to-24-hour window is rejected.
@@ -170,8 +205,9 @@ export async function startSplitPayment(input: StartSplitInput): Promise<{ url: 
     cancel_url: input.cancelUrl,
   });
 
+  let held;
   try {
-    await input.wallet.hold({
+    held = await input.wallet.hold({
       tenantId: input.tenantId,
       customerId: input.customerId,
       currency,
@@ -185,6 +221,11 @@ export async function startSplitPayment(input: StartSplitInput): Promise<{ url: 
   } catch (err) {
     await input.stripe.checkout.sessions.expire(session.id).catch(() => undefined);
     throw err;
+  }
+  if (held.replayed && held.entry.externalRef !== session.id) {
+    // A concurrent start placed this attempt's hold first: keep its Checkout, drop ours.
+    await input.stripe.checkout.sessions.expire(session.id).catch(() => undefined);
+    return reuse(held.entry.externalRef);
   }
   if (!session.url) throw new Error('Stripe returned a Checkout session without a URL');
   return { url: session.url, sessionId: session.id, holdRef: refs.hold };
@@ -217,6 +258,7 @@ import type { SplitCallbacks } from '@/lib/wallet/webhook';
 
 export interface OrderPort {
   confirm(orderId: string, payment: { walletPaid: number; cardPaid: number; paymentIntentId: string | null }): Promise<void>;
+  /** Frees the order for another try and adds 1 to its splitAttempt. */
   release(orderId: string): Promise<void>;
   flagForRefund(orderId: string, reason: string): Promise<void>;
 }

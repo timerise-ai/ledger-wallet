@@ -23,7 +23,7 @@ audited against was the stored-credit balance of a multi-location venue-booking 
 the properties a wallet has to hold: a top-up is credited once, for what Stripe collected, however often the
 event arrives; a wallet payment commits with its order or not at all; a balance never goes below zero under
 concurrent spends; a hold settles exactly once; a refund returns what was paid, per source; a balance in one
-tenant is never spendable in another; the sum of entries equals the balance. The suites, 94 tests on
+tenant is never spendable in another; the sum of entries equals the balance. The suites, 97 tests on
 Firestore and Postgres, state each one, and [`references/provenance.md`](references/provenance.md) has the
 record.
 
@@ -145,8 +145,8 @@ route every 15 minutes, such as Vercel Cron. Number formatting uses the platform
 Every TypeScript and SQL block in `references/` names its destination on its first line. Before a release the
 blocks are written to a scratch project, type-checked under `strict` and under `noUncheckedIndexedAccess`,
 the schema is applied to a real Postgres, and the suites run under Vitest against the in-memory store, the
-Firestore emulator and Postgres: 68 unit tests, an 8-test store contract on each of the three backends, and 2
-order atomicity tests, 94 in all. Stripe facts (zero-decimal currencies, the ISK and UGX representation,
+Firestore emulator and Postgres: 71 unit tests, an 8-test store contract on each of the three backends, and 2
+order atomicity tests, 97 in all. Stripe facts (zero-decimal currencies, the ISK and UGX representation,
 minimum charges, Checkout expiry bounds, webhook retry window) were checked against Stripe's documentation.
 `CLAUDE.md` has the recipe.
 
@@ -164,7 +164,7 @@ minimum charges, Checkout expiry bounds, webhook retry window) were checked agai
 
 Issues and pull requests are welcome here. Pure markdown, with no build step, but the code blocks are checked:
 every block names its destination on the first line, and every TypeScript block is written to compile as one
-project under `strict` and `noUncheckedIndexedAccess` and to pass its suites under Vitest, 94 tests with the
+project under `strict` and `noUncheckedIndexedAccess` and to pass its suites under Vitest, 97 tests with the
 Firestore emulator and Postgres. Claims in this skill are meant to be verifiable: if you change a factual
 claim, say how you verified it, whether against Stripe's documentation or API reference, Stripe test mode,
 the Firestore emulator, a Postgres reproduction, or ISO 4217.
