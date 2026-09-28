@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Documentation only; the skill content is unchanged from 0.1.1.
+
+### Added
+- `evals/prompts.md` with three operator prompts, and `.github/workflows/agent-eval.yml`, the caller of the
+  index's eval workflow copied verbatim from section 10 of the standard, so every published release runs
+  prompt 1 in Claude Code, Codex CLI and Gemini CLI.
+
+### Changed
+- `README.md` lists `evals/` and the eval workflow in the file table; `CLAUDE.md` describes both.
+- `provenance.md` and `CLAUDE.md` state that what was designed in the skill has never run in production,
+  in the words of the standard.
+
 ## [0.1.1] - 2026-09-25
 
 ### Fixed

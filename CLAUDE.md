@@ -16,7 +16,7 @@ in-memory store, the Firestore emulator and a real Postgres; the recipe is below
 The skill was written by the engineer who owns the module, and audited against the earlier implementation.
 `references/provenance.md` is the rationale layer and the ledger of that audit: what the audit changed and how
 the templates verify it, what was kept deliberately with the reason it is safe, and what was designed in the
-skill. Read it before "simplifying" anything.
+skill and has never run in production. Read it before "simplifying" anything.
 
 Sibling directories under `../` (`bookable-events`, `stripe-connect-subscriptions`, `booking-kiosk`, and so
 on) are other skills, not dependencies. They are referenced by name from `SKILL.md` and `README.md`;
@@ -39,6 +39,13 @@ to that port on either side is a change to both. The standard every skill follow
   `firestore.md` and `postgres.md` the stores; `stripe-top-up.md`, `split-payment.md` and `integration.md` the
   money flows; `api-routes.md`, `ui.md` and `admin-ui.md` the surface; `operations.md` running it;
   `testing.md`, `testing-payments.md` and `testing-stores.md` the suites; `provenance.md` the ledger.
+- `evals/`: `prompts.md` holds what an operator types after installing, in their words; the first prompt
+  is the agent eval run before every release. Every other file there is one eval run: measured frontmatter
+  that is never edited, then the notes of the person who ran it. Add a prompt rather than rewording one that
+  has results. The procedure is section 10 of the index's STANDARD.md.
+- `.github/workflows/agent-eval.yml`: the caller of the index's reusable eval workflow, copied verbatim from
+  section 10 of the standard and run on every published release and on a maintainer's dispatch. It is the
+  same in every skill; never edit it, and never add a trigger on `push` or `pull_request`.
 
 ## Editing conventions
 

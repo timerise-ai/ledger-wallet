@@ -7,7 +7,7 @@ path that credited, debited or displayed a balance, and every screen that showed
 
 This file is the engineering ledger for anyone editing the skill. It separates three things: what the audit
 changed and how the templates verify it, what was kept deliberately with the reason it is safe, and what was
-designed in the skill.
+designed in the skill and has never run in production.
 
 ## Fixed in the templates
 

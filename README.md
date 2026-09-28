@@ -103,6 +103,8 @@ the skill stays cheap in context until a topic is actually needed.
 | `references/testing-payments.md` | The Stripe suite with a fake Stripe, the route suite with the seam mocked |
 | `references/testing-stores.md` | The store conformance suite and the order atomicity tests on real backends |
 | `references/provenance.md` | The engineering ledger: what the audit changed and how the templates verify it, what was kept on purpose, what is new in the skill, and the order of work on an existing module |
+| `evals/` | The prompts an operator types after installing (`prompts.md`) and one file per agent eval: the skill installed into an empty Next.js app, one prompt, no help, then type-checked, built and tested |
+| `.github/workflows/agent-eval.yml` | The caller of the index's eval workflow, copied verbatim from the standard: prompt 1 in Claude Code, Codex CLI and Gemini CLI on every published release, any prompt on a maintainer's dispatch |
 
 The seam is the adaptation contract table in `SKILL.md`, which this skill keeps there instead of in a
 `references/adaptation.md`, with the rename table in `references/data-model.md`. It bounds the store, behind
