@@ -23,3 +23,9 @@ isolated: true
 timedOut: false
 runUrl: https://github.com/timerise-ai/ledger-wallet/actions/runs/36472280138
 ---
+
+Rubric 8/8, scored from the JSON summary. Templates used as written with nothing patched, the skill's suite
+beside 12 tests of its own (100 with Postgres), card-only orders on a webhook of their own, identity a signed
+`HttpOnly` cookie with every route 401 until a sign-in exists, and a handover naming USD as the default, both
+endpoints with their four events, the cron with `CRON_SECRET` failing closed, and the identity seam. It kept
+the example split callbacks unused because their refund flag drops the card payment's details.
