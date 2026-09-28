@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-28
+
+Fix release, from scoring the prompt-1 agent eval runs against 0.1.3. Apps built from 0.1.3 should copy in
+`lib/wallet/split.ts`, `lib/wallet/webhook.ts` and `components/wallet/WalletPanel.tsx`, and raise
+`splitAttempt` to `attempt + 1` in `onSplitFailed` instead of adding 1.
+
+### Fixed
+- A redelivered `expired` event could advance `splitAttempt` twice, past an attempt the customer had started.
+  The split settlement carries `attempt` from the Checkout metadata, and the example callbacks raise
+  `splitAttempt` to `attempt + 1`, which a redelivery repeats without effect (`split-payment.md`,
+  `stripe-top-up.md`).
+- The top-up form stayed disabled after an error response until a reload (`ui.md`).
+- A paid event redelivered after `wallet_short` could take the wallet part late for an order already flagged;
+  the first outcome of a session is final, and the refund of a flagged order returns a late wallet part
+  (`split-payment.md`).
+
+### Changed
+- Step 10 of the quick start says the handover belongs in the final message itself, not only a README
+  (`SKILL.md`).
+
 ## [0.1.3] - 2026-09-28
 
 Fix release, from scoring the prompt-1 agent eval runs against 0.1.2. Apps built from 0.1.2 should copy in
