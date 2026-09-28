@@ -43,6 +43,13 @@ to that port on either side is a change to both. The standard every skill follow
   is the agent eval run before every release. Every other file there is one eval run: measured frontmatter
   that is never edited, then the notes of the person who ran it. Add a prompt rather than rewording one that
   has results. The procedure is section 10 of the index's STANDARD.md.
+- **Eval badges** in `README.md`, under the compatibility badges, one per agent in the order Claude Code,
+  Codex, Gemini: label `eval` and the run's `model`, message its `result` and the rubric score from its
+  notes, linking the agent's newest prompt 1 result file. Colour `059669` for `pass`, `d97706` for `partial`,
+  `dc2626` for `fail`; in the shields.io URL a dash is doubled, a space is `_` and a slash is `%2F`. They do
+  not update themselves: the commit that adds a run's notes also moves its badge to that run, and a failing
+  run replaces a passing badge like any other, never kept at an older, better run. It is a `chore(evals)`
+  commit and causes no bump.
 - `.github/workflows/agent-eval.yml`: the caller of the index's reusable eval workflow, copied verbatim from
   section 10 of the standard and run on every published release and on a maintainer's dispatch. It is the
   same in every skill; never edit it, and never add a trigger on `push` or `pull_request`.
