@@ -1,0 +1,30 @@
+name: Agent eval
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      agent: { type: choice, options: [claude-code, codex, gemini-cli], default: claude-code }
+      prompt: { type: number, default: 1 }
+permissions:
+  contents: write
+concurrency:
+  group: agent-eval
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.event_name == 'release'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        agent: [claude-code, codex, gemini-cli]
+    uses: timerise-ai/skills/.github/workflows/agent-eval.yml@main
+    with: { agent: "${{ matrix.agent }}", prompt: 1 }
+    secrets: inherit
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: timerise-ai/skills/.github/workflows/agent-eval.yml@main
+    # A dispatch input arrives as a string; the reusable workflow's prompt is a number.
+    with: { agent: "${{ inputs.agent }}", prompt: "${{ fromJSON(inputs.prompt) }}" }
+    secrets: inherit
