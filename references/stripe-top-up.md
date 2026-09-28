@@ -157,6 +157,8 @@ export interface SplitSettlement {
   customerId: string;
   orderRef: string;
   holdRef: string;
+  /** The split attempt this Checkout belongs to; the next try after a failure is attempt + 1. */
+  attempt: number;
   sessionId: string;
   currency: CurrencyCode;
   walletAmount: number;
@@ -237,6 +239,7 @@ export async function handleWalletEvent(event: Stripe.Event, deps: WebhookDeps):
     customerId,
     orderRef: md.orderRef ?? '',
     holdRef: md.holdRef ?? '',
+    attempt: Number(md.attempt ?? 1) || 1, // sessions opened before attempts existed carry none
     sessionId: session.id,
     currency,
     walletAmount: Number(md.walletAmount ?? 0),

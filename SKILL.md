@@ -134,8 +134,8 @@ patched, and the webhook and cron routes are copied, never merged with the host'
    [testing-stores.md](references/testing-stores.md).
 9. Go live: [operations.md](references/operations.md). Before changing a template:
    [provenance.md](references/provenance.md).
-10. Hand over: the currencies and the default, the webhook URL per tenant and its four events, the 15-minute
-    cron and `CRON_SECRET` (unset, the sweeper refuses), and what resolves identity.
+10. Hand over in the final message itself, not only a README: the currencies and default, the webhook URL per
+    tenant and its four events, the 15-minute cron and `CRON_SECRET` (unset, it refuses), the identity seam.
 
 ## Reference directory
 

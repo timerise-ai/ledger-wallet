@@ -37,7 +37,8 @@ session is expired and the caller re-plans.
 
 **One hold per attempt.** A hold ref settles once, so a customer who lets a Checkout expire and tries again
 needs a new ref, or the new Checkout would run with nothing reserved. The host keeps `splitAttempt` on the
-order, passes it as `attempt`, and adds 1 in `onSplitFailed`. Reusing a settled attempt is refused with
+order, passes it as `attempt`, and sets it to `s.attempt + 1` in `onSplitFailed`, which a redelivered event
+repeats without effect. Reusing a settled attempt is refused with
 `HOLD_NOT_OPEN` and `details.nextAttempt`, never replayed silently.
 
 ## Planning and starting
@@ -132,7 +133,7 @@ export interface StartSplitInput {
   successUrl: string;
   cancelUrl: string;
   actor: Actor;
-  /** 1 for the order's first split; the host adds 1 in onSplitFailed and stores it on the order. */
+  /** 1 for the order's first split; onSplitFailed hands the host the next one to store on the order. */
   attempt?: number;
   /** Checkout lifetime, 31 to 1439 minutes (Stripe allows 30 min to 24 h). The hold lasts as long. */
   expiresInMinutes?: number;
@@ -186,6 +187,7 @@ export async function startSplitPayment(input: StartSplitInput): Promise<SplitSt
     holdRef: refs.hold,
     currency,
     walletAmount: String(plan.walletAmount),
+    attempt: String(attempt),
   };
   const session = await input.stripe.checkout.sessions.create({
     mode: 'payment',
@@ -246,6 +248,12 @@ real, so the handler takes the wallet part again as a plain `SPEND` (ref `<holdR
 no longer covers it, the handler calls `onSplitPaid` with `walletSettled: false`, and the host either refunds
 the card part or asks the customer for the difference. `test/stripe.test.ts` covers both branches.
 
+**The first outcome of a session is final.** Stripe can deliver the paid event again after a `wallet_short`,
+and by then a top-up may cover the late `SPEND`, so the replay takes the wallet part and answers
+`walletSettled: true`. The order is already flagged, so `confirm` ignores it; whoever refunds a flagged order
+looks up the entry with ref `<holdRef>:late` through `wallet.getEntry` and passes its amount as `walletPaid`
+to `refundOrder`, so the wallet part taken late goes back with the card part.
+
 ## Host callbacks
 
 `SplitCallbacks` in `webhook.ts` is how the wallet tells the host about its order. Both callbacks may run more
@@ -257,9 +265,13 @@ that is already confirmed is a no-op.
 import type { SplitCallbacks } from '@/lib/wallet/webhook';
 
 export interface OrderPort {
+  /** No-op on an order already confirmed or flagged for refund: the first outcome of a session is final. */
   confirm(orderId: string, payment: { walletPaid: number; cardPaid: number; paymentIntentId: string | null }): Promise<void>;
-  /** Frees the order for another try and adds 1 to its splitAttempt. */
-  release(orderId: string): Promise<void>;
+  /**
+   * Frees the order for another try: splitAttempt = max(splitAttempt, nextAttempt). Never "+ 1":
+   * a redelivered event calls this again, and must not skip past an attempt already started.
+   */
+  release(orderId: string, nextAttempt: number): Promise<void>;
   flagForRefund(orderId: string, reason: string): Promise<void>;
 }
 
@@ -274,7 +286,7 @@ export function makeSplitCallbacks(orders: OrderPort): SplitCallbacks {
       await orders.confirm(s.orderRef, { walletPaid: s.walletAmount, cardPaid: s.cardAmount, paymentIntentId: s.paymentIntentId });
     },
     async onSplitFailed(s) {
-      await orders.release(s.orderRef);
+      await orders.release(s.orderRef, s.attempt + 1);
     },
   };
 }

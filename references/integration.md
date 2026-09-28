@@ -148,7 +148,7 @@ Whatever the host's order looks like, it needs these fields for the wallet to wo
 | `payment.cardPaid` | the card part is paid | `refundOrder` |
 | `payment.paymentIntentId` | the card part is paid | `refundOrder` (Stripe refund) |
 | `payment.walletEntryId` or `holdRef` | the wallet part is taken | support, reconciliation against orders |
-| `splitAttempt` | starts at 1; `onSplitFailed` adds 1 | `startSplitPayment`, so a retried split holds again ([split-payment.md](split-payment.md)) |
+| `splitAttempt` | starts at 1; `onSplitFailed` raises it to `s.attempt + 1` | `startSplitPayment`, so a retried split holds again ([split-payment.md](split-payment.md)) |
 
 ## bookable-events
 

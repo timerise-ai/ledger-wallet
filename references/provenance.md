@@ -162,6 +162,31 @@ reached Postgres as an invalid timestamp and failed the query; Firestore and the
 unknown cursor as none. **Shipped:** the Postgres store does the same ([postgres.md](postgres.md)), checked
 against a real Postgres. Test: `pages history newest first without gaps or repeats`, on every backend.
 
+### 19. A redelivered failure skipped a split attempt
+
+Found by the agent evals of 0.1.3, in the example split callbacks. 0.1.3 told the host to add 1 to
+`splitAttempt` in `onSplitFailed`, but a redelivered `expired` event calls it again, and a late redelivery
+could move the order past an attempt the customer had already started, opening a second Checkout and hold.
+**Shipped:** the settlement carries `attempt` from the session's metadata, and the example sets
+`splitAttempt` to `max(splitAttempt, attempt + 1)`, which a redelivery repeats without effect
+([split-payment.md](split-payment.md)). Tests: `releases the wallet part when Checkout expires` and `a retry
+after an expired Checkout holds the wallet part again under the next attempt` check the attempt carried.
+
+### 20. The top-up form stayed busy after an error
+
+Found by the agent evals of 0.1.3, in the customer panel. When the top-up route answered an error, the form
+showed it but left its button disabled until a reload. **Shipped:** the error branch clears the busy state
+([ui.md](ui.md)). No test: the suites have no DOM renderer; checked by reading the handler's three exits.
+
+### 21. A redelivered paid event after a shortfall took the wallet part
+
+Found by the agent evals of 0.1.3, in the late-payment path. After `wallet_short`, a redelivery of the paid
+event retries the late `SPEND`, and succeeds if the customer topped up in between, for an order the host has
+already flagged. **Shipped:** the rule that the first outcome of a session is final: `confirm` ignores a
+flagged order, and the refund of a flagged order includes the entry `<holdRef>:late` if one exists
+([split-payment.md](split-payment.md)). The engine is unchanged; recording the shortfall itself would need an
+entry kind of its own.
+
 ## Found while verifying the templates
 
 - **Same-millisecond entries sorted by hash.** Two movements in one millisecond appeared in either order, so

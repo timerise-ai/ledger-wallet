@@ -185,7 +185,7 @@ describe('split payment', () => {
     const s = Object.assign(fake.sessions.get(sessionId)!, { status: 'expired' });
     expect(await handleWalletEvent(event('checkout.session.expired', s), { wallet, tenantId: T, onSplitFailed })).toBe('released');
     expect(await usd()).toMatchObject({ available: 400, held: 0 });
-    expect(onSplitFailed).toHaveBeenCalledWith(expect.objectContaining({ cause: 'expired' }));
+    expect(onSplitFailed).toHaveBeenCalledWith(expect.objectContaining({ cause: 'expired', attempt: 1 }));
   });
   it('expires the Checkout if the hold cannot be placed', async () => {
     await expect(startSplitPayment({
@@ -224,6 +224,7 @@ describe('split payment', () => {
     await expect(again()).rejects.toMatchObject({ code: 'HOLD_NOT_OPEN', details: { nextAttempt: 2 } });
     const second = await again(2);
     expect(second.holdRef).toBe(orderRefs('o1', 2).hold);
+    expect(fake.sessions.get(second.sessionId)!.metadata).toMatchObject({ attempt: '2' });
     expect(await usd()).toMatchObject({ available: 0, held: 400 });
     const s = pay(fake.sessions.get(second.sessionId)!);
     expect(await handleWalletEvent(event('checkout.session.completed', s), { wallet, tenantId: T, onSplitPaid })).toBe('captured');

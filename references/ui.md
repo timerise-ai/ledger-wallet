@@ -286,6 +286,7 @@ function TopUpForm({ currency, limits }: { currency: string; limits?: { min: num
       });
       if (!res.ok) {
         setError(await readApiError(res));
+        setBusy(false); // the form stays usable, so the customer can correct the amount and retry
         return;
       }
       const { url } = (await res.json()) as { url: string };
